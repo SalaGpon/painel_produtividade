@@ -7,10 +7,6 @@ import calendar
 import re
 import psycopg2
 import os
-from dotenv import load_dotenv
-
-# Carrega variáveis de ambiente do arquivo .env (apenas local)
-load_dotenv()
 
 # =========================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -212,25 +208,29 @@ def obter_ultimo_dia_mes(ano_mes):
 def get_db_url():
     """
     Retorna a URL do banco de dados.
-    Prioridade: 
-    1. Secrets do Streamlit Cloud (st.secrets)
-    2. Arquivo .env local
+    Funciona nos dois ambientes sem precisar de python-dotenv
     """
     try:
         # Tenta pegar das secrets do Streamlit Cloud (funciona no deploy)
         return st.secrets["DB_URL"]
     except:
-        # Se não encontrar, tenta pegar do arquivo .env (funciona local)
-        url = os.getenv("DB_URL")
-        if url:
-            return url
+        # Se não encontrar, significa que está rodando local
+        # Usa a string fixa (você pode comentar/descomentar conforme necessário)
+        
+        # OPÇÃO 1: String fixa (mais simples)
+        DB_URL = "postgresql://postgres.bfamfgjjitrfcdyzuibd:#Lucasd15m10@aws-1-us-east-1.pooler.supabase.com:5432/postgres?sslmode=require"
+        
+        # OPÇÃO 2: Variável de ambiente (se preferir)
+        # DB_URL = os.environ.get("DB_URL")
+        
+        if DB_URL:
+            return DB_URL
         else:
             st.error("""
             ❌ Configuração do banco não encontrada!
             
             Para executar localmente:
-            1. Crie um arquivo `.env` na pasta do projeto
-            2. Adicione: DB_URL=sua_string_de_conexao
+            - Use a string fixa no código
             
             Para executar no Streamlit Cloud:
             1. Vá em Settings > Secrets
