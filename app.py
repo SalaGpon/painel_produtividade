@@ -6,7 +6,11 @@ from datetime import datetime, date
 import calendar
 import re
 import psycopg2
-from urllib.parse import quote_plus
+import os
+from dotenv import load_dotenv
+
+# Carrega variáveis de ambiente do arquivo .env (apenas local)
+load_dotenv()
 
 # =========================================================
 # CONFIGURAÇÃO DA PÁGINA
@@ -51,7 +55,6 @@ def autenticar(login, senha):
         return True, "supervisor"
     
     if re.match(r'^TR\d+$', login) and senha == login:
-        # Verificar se o TR existe (opcional, pode adicionar validação)
         st.session_state.autenticado = True
         st.session_state.usuario = login
         st.session_state.tipo_usuario = "tecnico"
@@ -137,13 +140,39 @@ def extrair_tr(nome_completo):
     match = re.search(r'(TR\d+|TT\d+|TC\d+)', str(nome_completo))
     return match.group(1) if match else ""
 
+def extrair_nome_limpo(nome_completo):
+    """Extrai apenas o nome sem o TR do formato 'NOME (TR123456)'"""
+    if pd.isna(nome_completo):
+        return ""
+    nome_limpo = re.sub(r'\s*\(.*\)', '', str(nome_completo)).strip()
+    return nome_limpo
+
 def extrair_primeiro_nome(nome_completo):
     """Extrai apenas o primeiro nome do técnico"""
     if pd.isna(nome_completo):
         return ""
-    nome_limpo = re.sub(r'\s*\(.*\)', '', str(nome_completo)).strip()
-    primeiro_nome = nome_limpo.split()[0] if nome_limpo else ""
-    return primeiro_nome
+    nome_limpo = extrair_nome_limpo(nome_completo)
+    return nome_limpo.split()[0] if nome_limpo else ""
+
+def extrair_ultimo_sobrenome(nome_completo):
+    """Extrai o último sobrenome do técnico"""
+    if pd.isna(nome_completo):
+        return ""
+    nome_limpo = extrair_nome_limpo(nome_completo)
+    partes = nome_limpo.split()
+    return partes[-1] if len(partes) > 1 else ""
+
+def formatar_nome_exibicao(nome_completo):
+    """Formata o nome como 'Primeiro Nome + Último Sobrenome'"""
+    if pd.isna(nome_completo):
+        return ""
+    nome_limpo = extrair_nome_limpo(nome_completo)
+    partes = nome_limpo.split()
+    if len(partes) >= 2:
+        return f"{partes[0]} {partes[-1]}"
+    elif len(partes) == 1:
+        return partes[0]
+    return ""
 
 def obter_dias_com_producao(df_tecnico):
     """Retorna o número de dias em que o técnico teve pelo menos uma atividade"""
@@ -177,19 +206,45 @@ def obter_ultimo_dia_mes(ano_mes):
         return calendar.monthrange(ano, mes)[1]
 
 # =========================================================
-# CONEXÃO COM SUPABASE (USANDO SECRETS)
+# CONEXÃO COM SUPABASE (FUNCIONA LOCAL E CLOUD)
 # =========================================================
 
-# IMPORTANTE: A string de conexão deve estar configurada nas Secrets do Streamlit Cloud
-# No Streamlit Cloud, vá em Settings > Secrets e adicione:
-# DB_URL = "postgresql://postgres.bfamfgjjitrfcdyzuibd:#Lucasd15m10@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require"
+def get_db_url():
+    """
+    Retorna a URL do banco de dados.
+    Prioridade: 
+    1. Secrets do Streamlit Cloud (st.secrets)
+    2. Arquivo .env local
+    """
+    try:
+        # Tenta pegar das secrets do Streamlit Cloud (funciona no deploy)
+        return st.secrets["DB_URL"]
+    except:
+        # Se não encontrar, tenta pegar do arquivo .env (funciona local)
+        url = os.getenv("DB_URL")
+        if url:
+            return url
+        else:
+            st.error("""
+            ❌ Configuração do banco não encontrada!
+            
+            Para executar localmente:
+            1. Crie um arquivo `.env` na pasta do projeto
+            2. Adicione: DB_URL=sua_string_de_conexao
+            
+            Para executar no Streamlit Cloud:
+            1. Vá em Settings > Secrets
+            2. Adicione: DB_URL = "sua_string_de_conexao"
+            """)
+            return None
 
 @st.cache_data(ttl=300)  # Cache de 5 minutos
 def carregar_dados_os():
     """Carrega dados das ordens de serviço do Supabase"""
     try:
-        # Usar a URL das Secrets
-        DB_URL = st.secrets["DB_URL"]
+        DB_URL = get_db_url()
+        if not DB_URL:
+            return pd.DataFrame()
         
         conn = psycopg2.connect(DB_URL)
         
@@ -220,8 +275,9 @@ def carregar_dados_os():
 def carregar_dados_tecnicos():
     """Carrega dados dos técnicos (supervisores e status) do Supabase"""
     try:
-        # Usar a URL das Secrets
-        DB_URL = st.secrets["DB_URL"]
+        DB_URL = get_db_url()
+        if not DB_URL:
+            return pd.DataFrame()
         
         conn = psycopg2.connect(DB_URL)
         
@@ -273,7 +329,10 @@ df_tecnicos = carregar_dados_tecnicos()
 # Extrair informações das OS
 df_os["TECNICO"] = df_os["Técnico Atribuído"].astype(str)
 df_os["TR"] = df_os["TECNICO"].apply(extrair_tr)
+df_os["NOME_COMPLETO"] = df_os["TECNICO"].apply(extrair_nome_limpo)
 df_os["PRIMEIRO_NOME"] = df_os["TECNICO"].apply(extrair_primeiro_nome)
+df_os["ULTIMO_SOBRENOME"] = df_os["TECNICO"].apply(extrair_ultimo_sobrenome)
+df_os["NOME_EXIBICAO"] = df_os["TECNICO"].apply(formatar_nome_exibicao)
 
 # Mapear supervisor e status a partir do TR
 supervisor_map = {}
@@ -351,8 +410,8 @@ with col_filtro2:
 
 with col_filtro3:
     if st.session_state.tipo_usuario == "supervisor":
-        # Lista de técnicos para filtro adicional
-        tecnicos_list = ["TODOS"] + sorted(df_os["PRIMEIRO_NOME"].dropna().astype(str).unique())
+        # Lista de técnicos para filtro adicional (usando nome de exibição)
+        tecnicos_list = ["TODOS"] + sorted(df_os["NOME_EXIBICAO"].dropna().astype(str).unique())
         tecnico_selecionado = st.selectbox(
             "👤 Selecione o Técnico",
             options=tecnicos_list,
@@ -378,7 +437,7 @@ if st.session_state.tipo_usuario == "supervisor":
     if 'supervisor_selecionado' in locals() and supervisor_selecionado != "TODOS":
         df_filtrado = df_filtrado[df_filtrado["SUPERVISOR"] == supervisor_selecionado]
     if 'tecnico_selecionado' in locals() and tecnico_selecionado != "TODOS":
-        df_filtrado = df_filtrado[df_filtrado["PRIMEIRO_NOME"] == tecnico_selecionado]
+        df_filtrado = df_filtrado[df_filtrado["NOME_EXIBICAO"] == tecnico_selecionado]
 else:
     df_filtrado = df_filtrado[df_filtrado["TR"] == st.session_state.tr_usuario]
 
@@ -479,7 +538,7 @@ for tecnico in tecnicos_unicos:
     
     if not df_tecnico.empty:
         tr = df_tecnico["TR"].iloc[0] if not df_tecnico["TR"].isna().all() else ""
-        primeiro_nome = df_tecnico["PRIMEIRO_NOME"].iloc[0] if not df_tecnico["PRIMEIRO_NOME"].isna().all() else ""
+        nome_exibicao = df_tecnico["NOME_EXIBICAO"].iloc[0] if not df_tecnico["NOME_EXIBICAO"].isna().all() else ""
         supervisor = df_tecnico["SUPERVISOR"].iloc[0]
         status_tecnico = df_tecnico["STATUS_TECNICO"].iloc[0]
         
@@ -509,12 +568,12 @@ for tecnico in tecnicos_unicos:
         elif "veiculo" in status_lower or "avaria" in status_lower:
             status_class = "Problema Veículo"
         
-        nome_exibicao = f"{primeiro_nome} {tr}" if primeiro_nome and tr else tecnico[:20]
-        
         dados_tabela.append({
-            "nome": nome_exibicao,
+            "nome_exibicao": nome_exibicao,
+            "tr": tr,
             "nome_completo": tecnico,
             "status": status_class,
+            "status_original": status_tecnico,
             "supervisor": supervisor,
             "dias": dias,
             "com_sucesso": total_sucesso_tecnico,
@@ -529,7 +588,8 @@ dados_tabela.sort(key=lambda x: x["com_sucesso"], reverse=True)
 # Criar HTML da tabela
 html_tabela = '<div style="overflow-x: auto; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 550px; overflow-y: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">'
 html_tabela += "<thead><tr>"
-html_tabela += "<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>TÉCNICO</th>"
+html_tabela += "<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>NOME</th>"
+html_tabela += "<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>TR</th>"
 html_tabela += "<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>STATUS</th>"
 
 for dia in range(1, dias_no_mes + 1):
@@ -544,7 +604,8 @@ html_tabela += "</tr></thead><tbody>"
 
 for tecnico in dados_tabela:
     html_tabela += "<tr>"
-    html_tabela += f'<td style="padding: 6px 4px; text-align: left; font-weight: 500;" title="Supervisor: {tecnico["supervisor"]}">{tecnico["nome"]}</td>'
+    html_tabela += f'<td style="padding: 6px 4px; text-align: left; font-weight: 500;" title="{tecnico["nome_completo"]}">{tecnico["nome_exibicao"]}</td>'
+    html_tabela += f'<td style="padding: 6px 4px;"><span style="background: #e2e8f0; color: #0f172a; padding: 2px 6px; border-radius: 12px; font-size: 0.65rem;">{tecnico["tr"]}</span></td>'
     html_tabela += f'<td style="padding: 6px 4px;"><span style="background: #e2e8f0; color: #0f172a; padding: 2px 6px; border-radius: 12px; font-size: 0.65rem;">{tecnico["status"]}</span></td>'
     
     for dia in range(1, dias_no_mes + 1):
@@ -587,7 +648,7 @@ if dados_tabela and st.session_state.tipo_usuario == "supervisor":
     media_diaria_geral = total_com_sucesso / (len(dados_tabela) * dias_no_mes) if len(dados_tabela) > 0 else 0
     
     html_tabela += '<tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #2563eb;">'
-    html_tabela += f'<td colspan="3" style="padding: 6px 4px; font-weight:700;">TOTAL</td>'
+    html_tabela += f'<td colspan="4" style="padding: 6px 4px; font-weight:700;">TOTAL</td>'
     for dia in range(1, dias_no_mes + 1):
         total_dia = sum(t["dias"][f"{dia:02d}"] for t in dados_tabela)
         html_tabela += f"<td style='padding: 6px 4px;'><strong>{total_dia}</strong></td>"
