@@ -51,6 +51,7 @@ def autenticar(login, senha):
         return True, "supervisor"
     
     if re.match(r'^TR\d+$', login) and senha == login:
+        # Verificar se o TR existe (opcional, pode adicionar validação)
         st.session_state.autenticado = True
         st.session_state.usuario = login
         st.session_state.tipo_usuario = "tecnico"
@@ -176,15 +177,20 @@ def obter_ultimo_dia_mes(ano_mes):
         return calendar.monthrange(ano, mes)[1]
 
 # =========================================================
-# CONEXÃO COM SUPABASE
+# CONEXÃO COM SUPABASE (USANDO SECRETS)
 # =========================================================
 
-DB_URL = "postgresql://postgres:#Lucasd15m10@db.bfamfgjjitrfcdyzuibd.supabase.co:5432/postgres"
+# IMPORTANTE: A string de conexão deve estar configurada nas Secrets do Streamlit Cloud
+# No Streamlit Cloud, vá em Settings > Secrets e adicione:
+# DB_URL = "postgresql://postgres.bfamfgjjitrfcdyzuibd:#Lucasd15m10@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 @st.cache_data(ttl=300)  # Cache de 5 minutos
 def carregar_dados_os():
     """Carrega dados das ordens de serviço do Supabase"""
     try:
+        # Usar a URL das Secrets
+        DB_URL = st.secrets["DB_URL"]
+        
         conn = psycopg2.connect(DB_URL)
         
         query = """
@@ -214,6 +220,9 @@ def carregar_dados_os():
 def carregar_dados_tecnicos():
     """Carrega dados dos técnicos (supervisores e status) do Supabase"""
     try:
+        # Usar a URL das Secrets
+        DB_URL = st.secrets["DB_URL"]
+        
         conn = psycopg2.connect(DB_URL)
         
         query = """
