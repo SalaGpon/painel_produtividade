@@ -1,0 +1,10 @@
+# Arquivos locais
+*.pyc
+__pycache__/
+.env
+*.xlsx
+*.xls
+*.log
+
+# Streamlit
+.streamlit/secrets.toml
