@@ -238,6 +238,39 @@ def get_db_url():
             """)
             return None
 
+def obter_data_atualizacao():
+    """Retorna a data da última atualização dos dados"""
+    try:
+        DB_URL = get_db_url()
+        if not DB_URL:
+            return None
+        
+        conn = psycopg2.connect(DB_URL)
+        cur = conn.cursor()
+        
+        # Buscar a data da última OS inserida
+        cur.execute("SELECT MAX(inicio_execucao) FROM ordens_servico")
+        ultima_os = cur.fetchone()[0]
+        
+        # Buscar a data da última atualização do banco (registro mais recente)
+        cur.execute("SELECT created_at FROM ordens_servico ORDER BY created_at DESC LIMIT 1")
+        ultima_atualizacao = cur.fetchone()[0]
+        
+        cur.close()
+        conn.close()
+        
+        # Se tiver data da OS, usa ela, senão usa a data de criação
+        if ultima_os:
+            return ultima_os
+        elif ultima_atualizacao:
+            return ultima_atualizacao
+        else:
+            return datetime.now()
+            
+    except Exception as e:
+        print(f"Erro ao buscar data de atualização: {e}")
+        return datetime.now()
+
 @st.cache_data(ttl=300)  # Cache de 5 minutos
 def carregar_dados_os():
     """Carrega dados das ordens de serviço do Supabase"""
@@ -351,11 +384,13 @@ df_os["SUPERVISOR"] = df_os["TR"].map(supervisor_map).fillna("Não alocado")
 df_os["STATUS_TECNICO"] = df_os["TR"].map(status_map).fillna("Ativo")
 
 # =========================================================
-# HEADER
+# HEADER COM DATA DA ÚLTIMA ATUALIZAÇÃO
 # =========================================================
 
 hoje = date.today()
 mes_atual = hoje.strftime("%B de %Y").capitalize()
+data_atualizacao = obter_data_atualizacao()
+data_formatada = data_atualizacao.strftime("%d/%m/%Y %H:%M") if data_atualizacao else "N/A"
 
 st.markdown(f"""
 <div style="background: white; border-radius: 16px 16px 0 0; padding: 15px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-bottom: 4px solid #3b82f6; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
@@ -363,7 +398,7 @@ st.markdown(f"""
         <div style="font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, #2563eb, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 5px;">📊 PAINEL DE PRODUTIVIDADE</div>
         <div style="color: #64748b; font-weight: 500; font-size: 0.95rem;">Atualização automática</div>
         <div style="display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #2563eb, #7c3aed); color: white; padding: 4px 14px; border-radius: 50px; font-weight: 600; margin-top: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); font-size: 0.8rem;">
-            <span>📅 DADOS ATUALIZADOS</span>
+            <span>📅 ÚLTIMA ATUALIZAÇÃO: {data_formatada}</span>
         </div>
     </div>
     <div style="background: #f8fafc; padding: 8px 15px; border-radius: 50px; border: 1px solid #e2e8f0;">
@@ -422,7 +457,7 @@ with col_filtro3:
 if st.session_state.tipo_usuario == "supervisor" and not df_tecnicos.empty:
     with st.expander("📊 Estatísticas dos Supervisores"):
         sup_counts = df_tecnicos['supervisor'].value_counts().reset_index()
-        sup_counts.columns = ['Supervisor', 'Quantidade']
+        sup_counts.columns = ['Supervisor', 'Quantidade de Técnicos']
         st.dataframe(sup_counts, use_container_width=True, hide_index=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
