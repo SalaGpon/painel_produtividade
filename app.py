@@ -239,7 +239,11 @@ def get_db_url():
             return None
 
 def obter_data_atualizacao():
-    """Retorna a data da última atualização dos dados"""
+    """
+    Retorna a data e hora da última atualização do banco de dados.
+    Agora retorna a data de quando os dados foram inseridos/atualizados,
+    não a data das OS.
+    """
     try:
         DB_URL = get_db_url()
         if not DB_URL:
@@ -248,21 +252,21 @@ def obter_data_atualizacao():
         conn = psycopg2.connect(DB_URL)
         cur = conn.cursor()
         
-        # Buscar a data da última OS inserida
-        cur.execute("SELECT MAX(inicio_execucao) FROM ordens_servico")
-        ultima_os = cur.fetchone()[0]
-        
-        # Buscar a data da última atualização do banco (registro mais recente)
-        cur.execute("SELECT created_at FROM ordens_servico ORDER BY created_at DESC LIMIT 1")
+        # Buscar a data da última atualização (quando o registro foi inserido/modificado)
+        # Primeiro tenta pegar o created_at mais recente
+        cur.execute("SELECT MAX(created_at) FROM ordens_servico")
         ultima_atualizacao = cur.fetchone()[0]
+        
+        # Se não tiver created_at, pega a data da OS mais recente como fallback
+        if not ultima_atualizacao:
+            cur.execute("SELECT MAX(inicio_execucao) FROM ordens_servico")
+            ultima_atualizacao = cur.fetchone()[0]
         
         cur.close()
         conn.close()
         
-        # Se tiver data da OS, usa ela, senão usa a data de criação
-        if ultima_os:
-            return ultima_os
-        elif ultima_atualizacao:
+        # Se encontrou alguma data, retorna ela
+        if ultima_atualizacao:
             return ultima_atualizacao
         else:
             return datetime.now()
@@ -286,7 +290,8 @@ def carregar_dados_os():
             inicio_execucao as "Início Execução",
             tecnico_atribuido as "Técnico Atribuído",
             numero_sa as "Número SA",
-            estado as "Estado"
+            estado as "Estado",
+            created_at
         FROM ordens_servico
         WHERE estado IN ('Concluído com sucesso', 'Concluído sem sucesso')
         ORDER BY inicio_execucao DESC
@@ -297,6 +302,7 @@ def carregar_dados_os():
         
         df["Início Execução"] = pd.to_datetime(df["Início Execução"])
         df["DATA"] = df["Início Execução"].dt.date
+        df["created_at"] = pd.to_datetime(df["created_at"])
         
         return df
         
