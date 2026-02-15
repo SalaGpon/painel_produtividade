@@ -1,4 +1,3 @@
-# packages.txt
 libpq-dev
 gcc
 build-essential
