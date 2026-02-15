@@ -384,7 +384,7 @@ df_os["SUPERVISOR"] = df_os["TR"].map(supervisor_map).fillna("Não alocado")
 df_os["STATUS_TECNICO"] = df_os["TR"].map(status_map).fillna("Ativo")
 
 # =========================================================
-# HEADER COM DATA DA ÚLTIMA ATUALIZAÇÃO
+# HEADER COM DATA DA ÚLTIMA ATUALIZAÇÃO E BOTÃO
 # =========================================================
 
 hoje = date.today()
@@ -392,22 +392,32 @@ mes_atual = hoje.strftime("%B de %Y").capitalize()
 data_atualizacao = obter_data_atualizacao()
 data_formatada = data_atualizacao.strftime("%d/%m/%Y %H:%M") if data_atualizacao else "N/A"
 
-st.markdown(f"""
-<div style="background: white; border-radius: 16px 16px 0 0; padding: 15px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-bottom: 4px solid #3b82f6; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
-    <div>
+col_header1, col_header2, col_header3 = st.columns([2, 1, 1])
+
+with col_header1:
+    st.markdown(f"""
+    <div style="background: white; border-radius: 16px 16px 0 0; padding: 15px 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-bottom: 4px solid #3b82f6; margin-bottom: 15px;">
         <div style="font-size: 1.8rem; font-weight: 800; background: linear-gradient(135deg, #2563eb, #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 5px;">📊 PAINEL DE PRODUTIVIDADE</div>
         <div style="color: #64748b; font-weight: 500; font-size: 0.95rem;">Atualização automática</div>
         <div style="display: inline-flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #2563eb, #7c3aed); color: white; padding: 4px 14px; border-radius: 50px; font-weight: 600; margin-top: 8px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); font-size: 0.8rem;">
             <span>📅 ÚLTIMA ATUALIZAÇÃO: {data_formatada}</span>
         </div>
     </div>
-    <div style="background: #f8fafc; padding: 8px 15px; border-radius: 50px; border: 1px solid #e2e8f0;">
+    """, unsafe_allow_html=True)
+
+with col_header2:
+    st.markdown(f"""
+    <div style="background: #f8fafc; padding: 8px 15px; border-radius: 50px; border: 1px solid #e2e8f0; text-align: center;">
         <span style="background: #2563eb; color: white; padding: 4px 12px; border-radius: 50px; font-weight: 600; font-size: 0.8rem;">
             {st.session_state.usuario if st.session_state.tipo_usuario == "supervisor" else f"Técnico {st.session_state.tr_usuario}"}
         </span>
     </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
+with col_header3:
+    if st.button("🔄 Atualizar Agora", use_container_width=True, type="primary"):
+        st.cache_data.clear()
+        st.rerun()
 
 # =========================================================
 # FILTROS
