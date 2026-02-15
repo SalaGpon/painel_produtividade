@@ -1,10 +1,4 @@
-# Arquivos locais
+.env
+.streamlit/
 *.pyc
 __pycache__/
-.env
-*.xlsx
-*.xls
-*.log
-
-# Streamlit
-.streamlit/secrets.toml
