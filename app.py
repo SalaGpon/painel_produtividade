@@ -562,7 +562,7 @@ with col5:
     """, unsafe_allow_html=True)
 
 # =========================================================
-# TABELA POR TÉCNICO
+# TABELA POR TÉCNICO (SEM COLUNA STATUS)
 # =========================================================
 
 st.markdown(f"""
@@ -632,12 +632,12 @@ for tecnico in tecnicos_unicos:
 
 dados_tabela.sort(key=lambda x: x["com_sucesso"], reverse=True)
 
-# Criar HTML da tabela
+# Criar HTML da tabela (SEM COLUNA STATUS)
 html_tabela = '<div style="overflow-x: auto; border-radius: 8px; border: 1px solid #e2e8f0; max-height: 550px; overflow-y: auto;"><table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">'
 html_tabela += "<thead><tr>"
 html_tabela += "<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>NOME</th>"
 html_tabela += "<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>TR</th>"
-html_tabela += "<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>STATUS</th>"
+# LINHA DO STATUS REMOVIDA
 
 for dia in range(1, dias_no_mes + 1):
     html_tabela += f"<th style='background: #f8fafc; padding: 8px 4px; position: sticky; top: 0;'>{dia:02d}</th>"
@@ -653,7 +653,7 @@ for tecnico in dados_tabela:
     html_tabela += "<tr>"
     html_tabela += f'<td style="padding: 6px 4px; text-align: left; font-weight: 500;" title="{tecnico["nome_completo"]}">{tecnico["nome_exibicao"]}</td>'
     html_tabela += f'<td style="padding: 6px 4px;"><span style="background: #e2e8f0; color: #0f172a; padding: 2px 6px; border-radius: 12px; font-size: 0.65rem;">{tecnico["tr"]}</span></td>'
-    html_tabela += f'<td style="padding: 6px 4px;"><span style="background: #e2e8f0; color: #0f172a; padding: 2px 6px; border-radius: 12px; font-size: 0.65rem;">{tecnico["status"]}</span></td>'
+    # LINHA DO STATUS REMOVIDA
     
     for dia in range(1, dias_no_mes + 1):
         valor = tecnico["dias"][f"{dia:02d}"]
@@ -671,15 +671,12 @@ for tecnico in dados_tabela:
     html_tabela += f'<td style="padding: 6px 4px;"><span style="background: #f59e0b20; color: #92400e; padding: 2px 6px; border-radius: 20px; font-weight: 600;">{tecnico["media"]:.1f}</span></td>'
     
     if tecnico["eficacia"] >= 80:
-        badge_class = "success"
         bg = "#10b98120"
         cor = "#065f46"
     elif tecnico["eficacia"] >= 60:
-        badge_class = "warning"
         bg = "#f59e0b20"
         cor = "#92400e"
     else:
-        badge_class = "danger"
         bg = "#ef444420"
         cor = "#991b1b"
     html_tabela += f'<td style="padding: 6px 4px;"><span style="background: {bg}; color: {cor}; padding: 2px 6px; border-radius: 20px; font-weight: 600;">{tecnico["eficacia"]:.0f}%</span></td>'
@@ -687,6 +684,7 @@ for tecnico in dados_tabela:
     html_tabela += f'<td style="padding: 6px 4px;"><strong>{tecnico["total"]}</strong></td>'
     html_tabela += "</tr>"
 
+# Linha de TOTAL (para supervisor)
 if dados_tabela and st.session_state.tipo_usuario == "supervisor":
     total_com_sucesso = sum(t["com_sucesso"] for t in dados_tabela)
     total_sem_sucesso = sum(t["sem_sucesso"] for t in dados_tabela)
@@ -695,7 +693,7 @@ if dados_tabela and st.session_state.tipo_usuario == "supervisor":
     media_diaria_geral = total_com_sucesso / (len(dados_tabela) * dias_no_mes) if len(dados_tabela) > 0 else 0
     
     html_tabela += '<tr style="background: #f8fafc; font-weight: 700; border-top: 2px solid #2563eb;">'
-    html_tabela += f'<td colspan="4" style="padding: 6px 4px; font-weight:700;">TOTAL</td>'
+    html_tabela += f'<td colspan="3" style="padding: 6px 4px; font-weight:700;">TOTAL</td>'  # Mudado de colspan="4" para "3"
     for dia in range(1, dias_no_mes + 1):
         total_dia = sum(t["dias"][f"{dia:02d}"] for t in dados_tabela)
         html_tabela += f"<td style='padding: 6px 4px;'><strong>{total_dia}</strong></td>"
