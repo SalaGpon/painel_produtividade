@@ -369,21 +369,18 @@ df_os["PRIMEIRO_NOME"] = df_os["TECNICO"].apply(extrair_primeiro_nome)
 df_os["ULTIMO_SOBRENOME"] = df_os["TECNICO"].apply(extrair_ultimo_sobrenome)
 df_os["NOME_EXIBICAO"] = df_os["TECNICO"].apply(formatar_nome_exibicao)
 
-# Mapear supervisor e status a partir do TR
+# Mapear supervisor a partir do TR (removido mapeamento de status)
 supervisor_map = {}
-status_map = {}
 
 if not df_tecnicos.empty:
-    # Criar dicionários de mapeamento
+    # Criar dicionário de mapeamento apenas para supervisor
     for _, row in df_tecnicos.iterrows():
         tr = str(row['tr']).strip() if pd.notna(row['tr']) else ''
         if tr:
             supervisor_map[tr] = str(row['supervisor']) if pd.notna(row['supervisor']) else 'Não alocado'
-            status_map[tr] = str(row['status']) if pd.notna(row['status']) else 'Ativo'
 
-# Aplicar mapeamento
+# Aplicar mapeamento (removido STATUS_TECNICO)
 df_os["SUPERVISOR"] = df_os["TR"].map(supervisor_map).fillna("Não alocado")
-df_os["STATUS_TECNICO"] = df_os["TR"].map(status_map).fillna("Ativo")
 
 # =========================================================
 # HEADER COM DATA DA ÚLTIMA ATUALIZAÇÃO E BOTÃO
@@ -587,7 +584,6 @@ for tecnico in tecnicos_unicos:
         tr = df_tecnico["TR"].iloc[0] if not df_tecnico["TR"].isna().all() else ""
         nome_exibicao = df_tecnico["NOME_EXIBICAO"].iloc[0] if not df_tecnico["NOME_EXIBICAO"].isna().all() else ""
         supervisor = df_tecnico["SUPERVISOR"].iloc[0]
-        status_tecnico = df_tecnico["STATUS_TECNICO"].iloc[0]
         
         dias_com_producao = obter_dias_com_producao(df_tecnico)
         
@@ -605,22 +601,10 @@ for tecnico in tecnicos_unicos:
         eficacia_tecnico = (total_sucesso_tecnico / total_geral_tecnico * 100) if total_geral_tecnico > 0 else 0
         media_diaria_tecnico = total_sucesso_tecnico / dias_com_producao if dias_com_producao > 0 else 0
         
-        # Determinar classe do status
-        status_class = "Ativo"
-        status_lower = str(status_tecnico).lower()
-        if "folga" in status_lower:
-            status_class = "Folga"
-        elif "afastado" in status_lower or "atestado" in status_lower:
-            status_class = "Afastado"
-        elif "veiculo" in status_lower or "avaria" in status_lower:
-            status_class = "Problema Veículo"
-        
         dados_tabela.append({
             "nome_exibicao": nome_exibicao,
             "tr": tr,
             "nome_completo": tecnico,
-            "status": status_class,
-            "status_original": status_tecnico,
             "supervisor": supervisor,
             "dias": dias,
             "com_sucesso": total_sucesso_tecnico,
