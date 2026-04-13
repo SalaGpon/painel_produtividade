@@ -279,6 +279,23 @@ _LYT = dict(
 # =============================================================================
 
 @st.cache_data(ttl=300)
+def ultima_atualizacao_base():
+    """Retorna data/hora da ultima atualizacao do BASEBOT.csv no Supabase Storage."""
+    try:
+        url = f"{SUPABASE_URL}/storage/v1/object/info/public/berta/BASEBOT.csv"
+        r = requests.get(url, headers=SUPABASE_HDR, timeout=10)
+        if r.status_code == 200:
+            info = r.json()
+            updated = info.get("updated_at") or info.get("created_at", "")
+            if updated:
+                dt = pd.to_datetime(updated, utc=True).tz_convert("America/Sao_Paulo")
+                return dt.strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        pass
+    return None
+
+
+@st.cache_data(ttl=300)
 def carregar_base(_dummy=None):
     """
     Carrega BASEBOT.csv do Supabase Storage (producao).
@@ -1269,10 +1286,19 @@ def main():
     ds   = _escopo(df, f)
 
     if f["supervisor"]:
+        ult_att = ultima_atualizacao_base()
+        att_str = f" | 🕐 Base atualizada: {ult_att}" if ult_att else ""
         st.markdown(
             f'<div class="banner-sup">👑 Equipe de <strong>{f["supervisor"]}</strong>'
-            f' — {len(f["tecs_sup"])} tecnico(s) | {f["mes"]}</div>',
+            f' — {len(f["tecs_sup"])} tecnico(s) | {f["mes"]}{att_str}</div>',
             unsafe_allow_html=True)
+    else:
+        ult_att = ultima_atualizacao_base()
+        if ult_att:
+            st.markdown(
+                f'<div class="banner-sup" style="background:#f0f4f8">'
+                f'🕐 Base atualizada: <strong>{ult_att}</strong></div>',
+                unsafe_allow_html=True)
 
     if dm.empty and tela not in ("📅 Diario", "📆 Calendario"):
         st.warning("Nenhum dado encontrado para os filtros selecionados.")
