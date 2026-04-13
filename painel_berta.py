@@ -591,42 +591,149 @@ def tela_producao(dm, ds, f):
 # 8. TELA — REPETIDOS
 # =============================================================================
 
+def _calcular_repetidos_gpon(ds, mes_str):
+    """
+    Mesma logica do bot Telegram:
+    - Identifica GPONs com 2+ reparos conclusos c/ sucesso
+    - Delta <= 30 dias entre Fim Execucao do PAI e Fim Execucao do filho
+    - Denominador: reparos validos com Data de criacao no mes
+    - Numerador: GPONs unicos com repeticao cujo filho foi aberto no mes
+    Retorna: (gpons_repetidos dict, den_total, den_tec_df)
+    """
+    from datetime import datetime as _dt
+    import re as _re
+
+    try:
+        per = pd.Period(mes_str, freq="M")
+        ano, mes = per.year, per.month
+    except Exception:
+        return {}, 0, pd.DataFrame()
+
+    primeiro_dia = pd.Timestamp(ano, mes, 1)
+    if mes == 12:
+        ultimo_dia = pd.Timestamp(ano+1, 1, 1) - pd.Timedelta(days=1)
+    else:
+        ultimo_dia = pd.Timestamp(ano, mes+1, 1) - pd.Timedelta(days=1)
+
+    df = ds.copy()
+
+    # Garantir colunas de data
+    if "FIM_DT" not in df.columns:
+        df["FIM_DT"] = pd.to_datetime(df["Fim Execução"], dayfirst=True, errors="coerce")
+    if "AB_DT" not in df.columns:
+        df["AB_DT"] = pd.to_datetime(df["Data de criação"], dayfirst=True, errors="coerce")
+
+    # Normalizar GPON
+    df["_GPON"] = df["FSLOI_GPONAccess"].astype(str).str.strip().str.upper()
+
+    # Reparos validos concluidos com sucesso (igual ao bot)
+    df_rep = df[
+        (df["Macro Atividade"] == "REP-FTTH") &
+        (df["Estado"] == "CONCLUÍDO COM SUCESSO") &
+        (df["FIM_DT"].notna()) &
+        (df["_GPON"].notna()) &
+        (~df["_GPON"].isin(["", "NAN"]))
+    ].copy()
+
+    # Identificar GPONs repetidos (delta Fim→Fim <= 30 dias)
+    gpons_repetidos = {}
+    for gpon, grupo in df_rep.groupby("_GPON"):
+        grupo = grupo.sort_values("FIM_DT").reset_index(drop=True)
+        if len(grupo) < 2:
+            continue
+        for i in range(len(grupo) - 1):
+            pai  = grupo.iloc[i]
+            filho = grupo.iloc[i+1]
+            delta = (filho["FIM_DT"] - pai["FIM_DT"]).days
+            # Filho aberto no mes de referencia
+            ab_filho = filho.get("AB_DT") if "AB_DT" in filho.index else None
+            if pd.notna(ab_filho):
+                if ab_filho < primeiro_dia or ab_filho > ultimo_dia:
+                    continue
+            if delta <= 30:
+                if gpon not in gpons_repetidos:
+                    gpons_repetidos[gpon] = {
+                        "pai_tr"   : pai.get("CODIGO_TECNICO_EXTRAIDO", ""),
+                        "pai_nome" : pai.get("NOME_TEC", ""),
+                        "pai_sa"   : pai.get("Número SA", ""),
+                        "pai_fim"  : pai["FIM_DT"],
+                        "filho_tr" : filho.get("CODIGO_TECNICO_EXTRAIDO", ""),
+                        "filho_sa" : filho.get("Número SA", ""),
+                        "delta"    : delta,
+                    }
+                break
+
+    # Denominador: reparos validos abertos no mes (Data de criacao)
+    den_df = df[
+        (df["Macro Atividade"] == "REP-FTTH") &
+        (df["Estado"] == "CONCLUÍDO COM SUCESSO") &
+        (df["AB_DT"].notna()) &
+        (df["AB_DT"] >= primeiro_dia) &
+        (df["AB_DT"] <= ultimo_dia)
+    ]
+
+    return gpons_repetidos, len(den_df), den_df
+
+
 def tela_repetidos(dm, ds, f):
     _header("🔁", "Repetidos", f)
 
-    df_ab = ds[ds["MES_AB"].astype(str) == f["mes"]].copy()
-    den   = df_ab[df_ab["FLAG_REPARO_VALIDO"] == "SIM"]
-    num   = den[den["FLAG_REPETIDO_30D"] == "SIM"]
-    taxa  = round(len(num)/len(den)*100, 2) if len(den) > 0 else 0
+    # Calcular com mesma logica do bot
+    gpons_rep, den_total, den_df = _calcular_repetidos_gpon(ds, f["mes"])
+    num_gpons = len(gpons_rep)
+    taxa  = round(num_gpons / den_total * 100, 2) if den_total > 0 else 0
     rep_ab   = ds[ds["FLAG_REPETIDO_ABERTO"] == "SIM"]
-    rep_alrm = num[num["ALARMADO"] == "SIM"] if "ALARMADO" in num.columns else pd.DataFrame()
+    rep_alrm = pd.DataFrame([v for v in gpons_rep.values() if ds[ds["FSLOI_GPONAccess"].str.upper()==k]["ALARMADO"].eq("SIM").any() for k in [v.get("pai_sa","")]][:0])  # placeholder
+    # Alarmados: GPONs repetidos que estao alarmados
+    gpons_rep_set = set(gpons_rep.keys())
+    rep_alrm_count = ds[
+        (ds["_GPON"].isin(gpons_rep_set) if "_GPON" in ds.columns else
+         ds["FSLOI_GPONAccess"].astype(str).str.upper().isin(gpons_rep_set)) &
+        (ds["ALARMADO"] == "SIM")
+    ].shape[0] if "ALARMADO" in ds.columns else 0
 
     cols = st.columns(5)
     for col, (lb,vl,sb,cl) in zip(cols,[
-        ("Total Reparos", f"{len(den):,}", "abertos no mes",     "kpi-blue"),
-        ("Repetidos",     f"{len(num):,}", "FLAG_REPETIDO_30D",  "kpi-red" if taxa>9 else "kpi-yellow"),
-        ("Taxa %",        f"{taxa}%",      "meta: <= 9%",        "kpi-red" if taxa>9 else "kpi-green"),
+        ("Total Reparos", f"{den_total:,}",   "abertos no mes",  "kpi-blue"),
+        ("Repetidos",     f"{num_gpons:,}",   "GPONs unicos",    "kpi-red" if taxa>9 else "kpi-yellow"),
+        ("Taxa %",        f"{taxa}%",          "meta: <= 9%",     "kpi-red" if taxa>9 else "kpi-green"),
         ("Em Garantia",   f"{len(rep_ab):,}", "abertos 30d",     "kpi-yellow"),
-        ("Alarmados",     f"{len(rep_alrm):,}","GPON alarmado",  "kpi-red" if len(rep_alrm)>0 else "kpi-green"),
+        ("Alarmados",     f"{rep_alrm_count}", "GPON alarmado",  "kpi-red" if rep_alrm_count>0 else "kpi-green"),
     ]):
         col.markdown(_kpi(lb,vl,sb,cl), unsafe_allow_html=True)
     st.write("")
 
-    _sec("Indicador por Tecnico")
+    _sec("Indicador por Tecnico — GPONs unicos (mesma logica do bot)")
     def _n(v): return str(v).split(" - ")[0].strip().title() if pd.notna(v) else ""
-    dt = den.groupby("CODIGO_TECNICO_EXTRAIDO").agg(
+
+    # Denominador por tecnico (reparos abertos no mes)
+    den_tec = den_df.groupby("CODIGO_TECNICO_EXTRAIDO").agg(
         Total=("Número SA","count"),
-        Nome=("Técnico Atribuído", lambda x: _n(x.iloc[0]) if len(x) else "")).reset_index()
-    nt = num.groupby("CODIGO_TECNICO_EXTRAIDO").size().reset_index(name="Rep")
-    tb = dt.merge(nt, on="CODIGO_TECNICO_EXTRAIDO", how="left")
-    tb["Rep"]   = tb["Rep"].fillna(0).astype(int)
-    tb["Taxa%"] = (tb["Rep"]/tb["Total"]*100).round(2)
+        Nome=("Técnico Atribuído", lambda x: _n(x.iloc[0]) if len(x) else "")
+    ).reset_index() if not den_df.empty else pd.DataFrame(columns=["CODIGO_TECNICO_EXTRAIDO","Total","Nome"])
+
+    # Numerador por tecnico (GPONs únicos onde é PAI)
+    rep_por_tec = {}
+    for gpon, info in gpons_rep.items():
+        tr = info.get("pai_tr","")
+        if tr:
+            rep_por_tec[tr] = rep_por_tec.get(tr, 0) + 1
+
+    rep_tec_df = pd.DataFrame(
+        [(k, v) for k,v in rep_por_tec.items()],
+        columns=["CODIGO_TECNICO_EXTRAIDO","Repetidos"]
+    ) if rep_por_tec else pd.DataFrame(columns=["CODIGO_TECNICO_EXTRAIDO","Repetidos"])
+
+    tb = den_tec.merge(rep_tec_df, on="CODIGO_TECNICO_EXTRAIDO", how="left")
+    tb["Repetidos"] = tb["Repetidos"].fillna(0).astype(int)
+    tb["Taxa%"] = (tb["Repetidos"]/tb["Total"].replace(0,1)*100).round(2)
     tb = tb.sort_values("Taxa%", ascending=False).reset_index(drop=True)
     tb.columns = ["TR","Total","Nome","Repetidos","Taxa%"]
     tb["Status"] = tb["Taxa%"].apply(lambda t: "🔴" if t>12 else "🟡" if t>9 else "🟢" if t>0 else "⚪")
     st.dataframe(tb[["Status","Nome","TR","Repetidos","Total","Taxa%"]], use_container_width=True, hide_index=True,
                  column_config={"Taxa%": st.column_config.ProgressColumn(
-                     "Taxa%", format="%.1f%%", min_value=0, max_value=max(float(tb["Taxa%"].max()),1))})
+                     "Taxa%", format="%.1f%%", min_value=0,
+                     max_value=max(float(tb["Taxa%"].max()) if not tb.empty else 1, 1))})
 
     c1, c2 = st.columns(2)
     with c1:
